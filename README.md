@@ -1,3 +1,7 @@
+This project's main repo is available at [git.dragons.rocks](https://git.dragons.rocks/bookwyrm/).
+Mirrors can be found on [GitHub](https://github.com/Tmplt/bookwyrm)
+and [GitLab](https://gitlab.com/Tmplt/bookwyrm).
+
 ## What is this
 Give `bookwyrm` some data which relates to a book, paper or similar.
 With this data, it'll look trough all manners of sources (see [here](#planned-supported-sources)),
