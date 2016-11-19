@@ -111,18 +111,6 @@ class Item:
     # def __getattr__(self, key):
     #     return getattr(super(Item, self).__getattribute__('data'), key)
 
-    def item_type(self):
-        paper_exclusive = (
-            self.nonexacts.journal,
-            self.exacts.volume,
-            self.exacts.number
-        )
-
-        if any(paper_exclusive):
-            return ItemType.paper
-
-        return ItemType.book
-
     def matches(self, wanted, fuzzy_min=FUZZ_RATIO_DEF):
         """
         Returns true if all specified exact values are equal
@@ -132,10 +120,6 @@ class Item:
         def match_partial(s1, s2):
             ratio = fuzz.partial_ratio(s1, s2)
             return ratio >= fuzzy_min
-
-        # Don't check if a Paper matches a Book and vise-versa.
-        if self.item_type() != wanted.item_type():
-            return False
 
         # Parallell iteration over the two tuples of exact values.
         for val, req in zip(self.exacts, wanted.exacts):
