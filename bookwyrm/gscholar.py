@@ -48,6 +48,7 @@ class _GScholar:
             try:
                 self.logger.debug('getting result page')
                 res_page = requests.get(SCHOLARS_BASE_URL, params={'q': query, 'start': page_id})
+                self.logger.debug('got page: %s' % res_page.url)
             except requests.exceptions.RequestException as e:
                 self.logger.warning('query: \'{}\'; reason: \'{}\''.format(query, e))
 
