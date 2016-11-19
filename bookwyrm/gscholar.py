@@ -155,7 +155,7 @@ def search(item):
 
     logger = logging.getLogger('bookwyrm.gscholar')
 
-    query = {'req': item.nonexacts.title}
+    query = item.nonexacts.title
     logger.debug('querying with \'%s\'' % query)
 
     results = []
