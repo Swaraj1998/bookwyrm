@@ -162,6 +162,10 @@ def parse_command_line(parser):
     add_optarg('--version', action='version', version='%(prog)s 0.3.0-alpha')
     add_optarg('--debug', action='store_true')
 
+    if len(sys.argv) == 1:
+        parser.print_usage()
+        sys.exit(0)
+
     args = parser.parse_args()
     validate_arguments(args, parser)
 
@@ -180,7 +184,7 @@ def validate_arguments(args, parser):
         args.ident
     )
 
-    if not any(required_arg) and len(sys.argv) > 2:
+    if not any(required_arg) and len(sys.argv) > 1:
         parser.error('missing necessarily inclusive argument.')
 
     elif any(required_arg[:-1]) and args.ident:
