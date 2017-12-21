@@ -25,5 +25,57 @@ from bs4 import BeautifulSoup as bs
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
 
+def build_queries(item):
+    """
+    Build a set of Library Genesis search queries from an item.
+    The set contains a pair: (query dictionary, path to index.php)
+    """
+
+    # Library Genesis divides its library into
+    #   * LibGen (Sci-Tech) -- text books (/search.php);
+    #   * Scientific Articles (/scimag/index.php);
+    #   * Fiction (/foreignfiction/index.php);
+    #   * Russion fiction (/fiction_rus/index.php; different structure; on hold);
+    #   * Comics (/comics/index.php);
+    #   * Standards (/standarts/index.php), and
+    #   * Magazines (apparently only four, smartphone-related; ignored)
+    #
+    # To get everything we want, we aptly build a set set of queries that
+    # searches all categories. We return a set of pairs holding the query dictionary,
+    # and the path to the index.php, relative to domain root.
+
+
+    queries = []
+
+    #
+    # The Fiction Category
+    #
+
+    # It is only possible to match a column at a time, so we must create
+    # a search query for each.
+
+    # All appended queries below inherit the following keys
+    base = {
+        'f_ext': item.nonexacts.extension or "All",
+        'f_group': 0,  # Don't group results of differing extensions.
+        'f_lang': 0,   # Search for all languages, for now.
+    }
+
+    fields = {'all': 0, 'title': 1, 'author': 2, 'series': 3}
+    search_for_in = lambda s, col: queries.append({ **base, 's': s, 'f_column': col },
+            '/foreignfiction/index.php')
+
+    if item.nonexacts.title:
+        search_for_in(item.nonexacts.title, fields['title'])
+
+    # But this is a list
+    if item.nonexacts.authors:
+        search_for_in(item.nonexacts.title, fields['author'])
+
+    if item.nonexacts.series:
+        search_for_in(item.nonexacts.series, fields['series'])
+
+    return queries
+
 if __name__ == "__main__":
     print('Hello World!')
