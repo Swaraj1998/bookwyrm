@@ -32,7 +32,7 @@ def build_queries(item):
     The set contains a pair: (query dictionary, path to index.php)
     """
 
-    # Library Genesis divides its library into
+    # Library Genesis divides its library into the following categories
     #   * LibGen (Sci-Tech) -- text books (/search.php);
     #   * Scientific Articles (/scimag/index.php);
     #   * Fiction (/foreignfiction/index.php);
@@ -44,18 +44,46 @@ def build_queries(item):
     # To get everything we want, we aptly build a set set of queries that
     # searches all categories. We return a set of pairs holding the query dictionary,
     # and the path to the index.php, relative to domain root.
-
+    #    Unfortunately, Library Genesis only allows to search one field at a time,
+    # so when the wanted item specifies title AND authors AND publisher etc.,
+    # we must do a query per field. Luckily, bookwyrm does the heavy lifting for us,
+    # and some fields are unecessary, e.g. extension and year; these are not fuzzily matched.
+    # TODO: investigate possibility of dupes. Hashmap?
 
     queries = []
+    e = item.exacts
+    ne = item.nonexacts
+
+    #
+    # The Text Book Category
+    #
+
+    # All appended queries below inherit the following keys
+    base = {
+        'res': 100,  # 100 results per page
+        'view': 'simple'
+    }
+
+    search_for_in = lambda req, col: queries.append(
+        ({ **base, 'req': req, 'column': col}, '/search.php')
+    )
+
+    if ne.title:
+        search_for_in(ne.title, 'title')
+
+    if ne.authors:
+        search_for_in(', '.join(ne.authors), 'author')
+
+    if ne.series:
+        search_for_in(ne.series, 'series')
+
+    if ne.publisher:
+        search_for_in(ne.publisher, 'publisher')
 
     #
     # The Fiction Category
     #
 
-    # It is only possible to match a column at a time, so we must create
-    # a search query for each.
-
-    # All appended queries below inherit the following keys
     base = {
         'f_ext': item.exacts.extension or "All",
         'f_group': 0,  # Don't group results of differing extensions.
@@ -67,14 +95,43 @@ def build_queries(item):
         ({ **base, 's': s, 'f_column': col }, '/foreignfiction/index.php')
     )
 
-    if item.nonexacts.title:
-        search_for_in(item.nonexacts.title, fields['title'])
+    if ne.title:
+        search_for_in(ne.title, fields['title'])
 
-    if item.nonexacts.authors:
-        search_for_in(', '.join(item.nonexacts.authors), fields['author'])
+    if ne.authors:
+        search_for_in(', '.join(ne.authors), fields['author'])
 
-    if item.nonexacts.series:
-        search_for_in(item.nonexacts.series, fields['series'])
+    if ne.series:
+        search_for_in(ne.series, fields['series'])
+
+    #
+    # The Scientific Articles Category
+    #
+
+    queries.append(
+        {
+            's': ne.title,
+            'journalid': ne.journal,
+            'v': e.volume or e.year or '',  # e.volume should be a string
+            #'i': add ne.issue?
+            'p': e.pages,
+            'redirect': 0
+        },
+        '/scimag/index.php'
+    )
+
+    #
+    # The Comics Category
+    #
+
+
+    #
+    # The Standards Category
+    #
+
+    #
+    # The Magazines Category
+    #
 
     return queries
 
