@@ -71,7 +71,7 @@ PYBIND11_MODULE(pybookwyrm, m)
         .def(py::init<const std::map<string, string>&, const vector<string>&>())
         .def_readonly("authors",   &bw::nonexacts_t::authors)
         .def_readonly("title",     &bw::nonexacts_t::title)
-        .def_readonly("serie",     &bw::nonexacts_t::series)
+        .def_readonly("series",    &bw::nonexacts_t::series)
         .def_readonly("publisher", &bw::nonexacts_t::publisher)
         .def_readonly("journal",   &bw::nonexacts_t::journal)
         .def("__repr__", [](const bw::nonexacts_t &c) {
@@ -93,6 +93,7 @@ PYBIND11_MODULE(pybookwyrm, m)
         .def_readonly("uris", &bw::misc_t::uris);
 
     py::class_<bw::item>(m, "item")
+        .def(py::init<const std::tuple<bw::nonexacts_t, bw::exacts_t, bw::misc_t>&>())
         .def_readonly("nonexacts", &bw::item::nonexacts)
         .def_readonly("exacts",    &bw::item::exacts)
         .def("__repr__", [](const bw::item &i) {

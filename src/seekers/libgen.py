@@ -21,6 +21,7 @@
 Scrapes Library Genesis <https://en.wikipedia.org/wiki/Library_Genesis> for item matches.
 """
 
+import pybookwyrm as bw
 from bs4 import BeautifulSoup as bs
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
@@ -56,21 +57,21 @@ def build_queries(item):
 
     # All appended queries below inherit the following keys
     base = {
-        'f_ext': item.nonexacts.extension or "All",
+        'f_ext': item.exacts.extension or "All",
         'f_group': 0,  # Don't group results of differing extensions.
         'f_lang': 0,   # Search for all languages, for now.
     }
 
     fields = {'all': 0, 'title': 1, 'author': 2, 'series': 3}
-    search_for_in = lambda s, col: queries.append({ **base, 's': s, 'f_column': col },
-            '/foreignfiction/index.php')
+    search_for_in = lambda s, col: queries.append(
+        ({ **base, 's': s, 'f_column': col }, '/foreignfiction/index.php')
+    )
 
     if item.nonexacts.title:
         search_for_in(item.nonexacts.title, fields['title'])
 
-    # But this is a list
     if item.nonexacts.authors:
-        search_for_in(item.nonexacts.title, fields['author'])
+        search_for_in(', '.join(item.nonexacts.authors), fields['author'])
 
     if item.nonexacts.series:
         search_for_in(item.nonexacts.series, fields['series'])
@@ -78,4 +79,15 @@ def build_queries(item):
     return queries
 
 if __name__ == "__main__":
-    print('Hello World!')
+    nonexacts = bw.nonexacts_t({
+        'title': 'Victory of Eagles',
+        'series': 'Temeraire',
+        },
+
+        ['Naomi Novik', 'Electric Banana Band']
+    )
+
+    item = bw.item((nonexacts, bw.exacts_t({},''), bw.misc_t([],[])))
+    queries = build_queries(item)
+    for query in queries:
+        print(query)
