@@ -30,6 +30,8 @@ PYBIND11_MODULE(pybookwyrm, m)
 {
     m.attr("__doc__") = "bookwyrm python bindings";
 
+    m.attr("empty") = bw::empty;
+
     py::enum_<bw::year_mod>(m, "year_mod")
         .value("equal", bw::year_mod::equal)
         .value("eq_gt", bw::year_mod::eq_gt)

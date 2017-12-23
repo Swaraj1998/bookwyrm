@@ -11,6 +11,11 @@ endif()
 # Requiring linking to fuzzywuzzy I can understand, since the item matching function uses it,
 # but termbox? curl? Why are they needed?
 # TODO: investigate and clean up
+
+### Is this because the whole object depends on them?
+### Create a small class that wraps everything Python uses?
+
+
 target_link_libraries(pybookwyrm PRIVATE
     stdc++fs
     termbox_lib_static

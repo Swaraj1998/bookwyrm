@@ -28,7 +28,7 @@
 namespace bookwyrm {
 
 /* Default value: "this value is empty". */
-enum { empty = -1 };
+constexpr int empty = -1;
 
 /*
  * For --year:

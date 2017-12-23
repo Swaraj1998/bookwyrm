@@ -22,28 +22,32 @@ Scrapes Library Genesis <https://en.wikipedia.org/wiki/Library_Genesis> for item
 """
 
 import pybookwyrm as bw
-from bs4 import BeautifulSoup as bs
+from bs4 import BeautifulSoup
+from furl import furl
+import requests
+import re
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
 
 def build_queries(item):
     """
     Build a set of Library Genesis search queries from an item.
-    The set contains a pair: (query dictionary, path to index.php)
+    The set contains a pair: (path to index.php, query dictionary)
     """
 
-    # Library Genesis divides its library into the following categories
+    # Library Genesis divides its library into the following categories:
     #   * LibGen (Sci-Tech) -- text books (/search.php);
     #   * Scientific Articles (/scimag/index.php);
     #   * Fiction (/foreignfiction/index.php);
     #   * Russion fiction (/fiction_rus/index.php; different structure; on hold);
     #   * Comics (/comics/index.php);
-    #   * Standards (/standarts/index.php), and
-    #   * Magazines (apparently only four, smartphone-related; ignored)
+    #   * Standards (/standarts/index.php; different structure; on hold), and
+    #   * Magazines (different structure (domain, et al.; on hold)
     #
-    # To get everything we want, we aptly build a set set of queries that
+    # Categories marked on hold may be implemented upon request.
+    #    To get everything we want, we aptly build a set set of queries that
     # searches all categories. We return a set of pairs holding the query dictionary,
-    # and the path to the index.php, relative to domain root.
+    # and the path to the index.php, absolute to domain root.
     #    Unfortunately, Library Genesis only allows to search one field at a time,
     # so when the wanted item specifies title AND authors AND publisher etc.,
     # we must do a query per field. Luckily, bookwyrm does the heavy lifting for us,
@@ -60,12 +64,12 @@ def build_queries(item):
 
     # All appended queries below inherit the following keys
     base = {
-        'res': 100,  # 100 results per page
+        'req': 100,  # 100 results per page
         'view': 'simple'
     }
 
     search_for_in = lambda req, col: queries.append(
-        ({ **base, 'req': req, 'column': col}, '/search.php')
+        ('/search.php', { **base, 'req': req, 'column': col})
     )
 
     if ne.title:
@@ -85,14 +89,14 @@ def build_queries(item):
     #
 
     base = {
-        'f_ext': item.exacts.extension or "All",
+        'f_ext': e.extension or "All",
         'f_group': 0,  # Don't group results of differing extensions.
         'f_lang': 0,   # Search for all languages, for now.
     }
 
     fields = {'all': 0, 'title': 1, 'author': 2, 'series': 3}
     search_for_in = lambda s, col: queries.append(
-        ({ **base, 's': s, 'f_column': col }, '/foreignfiction/index.php')
+        ('/foreignfiction/index.php', { **base, 's': s, 'f_column': col })
     )
 
     if ne.title:
@@ -108,32 +112,123 @@ def build_queries(item):
     # The Scientific Articles Category
     #
 
+    def non_empty(*xs):
+        res = [x for x in xs if x != bw.empty]
+        return res[0] if res else None
+
     queries.append(
+        ('/scimag/index.php',
         {
             's': ne.title,
             'journalid': ne.journal,
-            'v': e.volume or e.year or '',  # e.volume should be a string
+            'v': non_empty(e.volume, e.year),  # e.volume should be a string?
             #'i': add ne.issue?
-            'p': e.pages,
-            'redirect': 0
-        },
-        '/scimag/index.php'
+            'p': non_empty(e.pages),
+            'redirect': 0  # Don't redirect to Sci-Hub on no results
+        })
     )
 
-    #
-    # The Comics Category
-    #
-
-
-    #
-    # The Standards Category
-    #
-
-    #
-    # The Magazines Category
-    #
-
     return queries
+
+
+def tables_fetcher(f):
+    """
+    A generator that given a start URL fetches each page of results.
+    Yields a soup of the result table.
+    """
+
+    # While /search.php has a horizontal scrollbar that displays the current viewed page,
+    # it is made with JavaScript, so we cannot use that. The second best way is probably
+    # do check whether the current page fetch yields the same soup. If that's the case,
+    # we've gone through all pages.
+
+    p = 1
+    query_params = f.args.copy()
+    last_request = None
+
+    while True:
+        f.set({'page':p}).add(query_params)
+
+        r = requests.get(f.url)
+        if r.status_code != requests.codes.ok:
+            # Log failure to bookwyrm?
+            # Or log after taking exception?
+            r.raise_for_status()
+
+        if r.text == last_request:
+            # We've gone through all pages.
+            return
+
+        soup = BeautifulSoup(r.text, 'html.parser')
+
+        # recursive=False?
+        yield soup.find('table', {'class': 'c', 'rules':'rows'})
+
+        p += 1
+        last_request = r.text
+
+def process_libgen(table):
+    """
+    Processes a table soup and returns the items found within.
+    """
+    items = []
+
+    if table == None:
+        print("table is None")
+        return
+
+    def make_item(row):
+        columns = row.find_all('td')
+
+        # In a row, the first column contains the item's ID number on LibGen.
+        # The other columns contain a single piece of data, the raw text of which
+        # we aptly extract. The third column, however, contains the item's series
+        # (in green cursive), title (blue), edition (cursive, green, in brackets),
+        # and a number of ISBN numbers (green, cursive).
+        #
+        # Also, within this STEI (series, title, edition, isbsns) field, the title,
+        # series, edition and isbsns are all in the same <a>-tag: fortunately,
+        # the title is always in normal text, while the latter are both in their own
+        # <font>-tags.
+        #
+
+        authors, stei, publisher, year, pages, language,
+            size, extension = columns[1:9]
+        mirrors = columns[10:len(mirrors)-1]
+
+        # If first <a>-tag has title attribute, the item does not have a series.
+        has_series = False if stei.a.has_attr('title') else True
+
+        # The title, edition, and isbn section always contain an id-attribute with
+        # an integer.
+        tei = stei.find_next('a', id=re.compile('\d+$'))
+
+        def extract_title():
+            try:
+                # The title if the text before the subsequent font tags, if any
+                return tei.font.previous_sibling
+            except AttributeError:
+                # No edtion of isbn numbers
+                return tei.text
+
+        def extract_edition(stei):
+            for font in tei.find_all('font', recursive=False):
+                if '[' in font.text or ']' in font.text:
+                    for c in '[]':
+                        font.text.replace(c, '')
+
+                    return font.text
+
+        nonexacts = bw.nonexacts_t({
+            'authors': authors.text,
+            'series': stei.a.text if has_series else '',
+            'title': extract_title(),
+            'edition': extract_title() or ''
+        })
+
+    # The first row is the column headers, so we skip it.
+    for row in table.find_all('tr')[1:]:
+        items.append(make_item(row))
 
 if __name__ == "__main__":
     nonexacts = bw.nonexacts_t({
@@ -141,10 +236,31 @@ if __name__ == "__main__":
         'series': 'Temeraire',
         },
 
-        ['Naomi Novik', 'Electric Banana Band']
+        ['Naomi Novik']
     )
 
     item = bw.item((nonexacts, bw.exacts_t({},''), bw.misc_t([],[])))
     queries = build_queries(item)
+
     for query in queries:
-        print(query)
+        for domain in DOMAINS:
+            path, params = query
+            f = furl('http://' + domain + path).set(query_params=params)
+
+            if path != '/search.php':
+                continue
+
+            try:
+                for table in tables_fetcher(f):
+                    if path == '/search.php':
+                        items = process_libgen(table)
+                    else:
+                        print("unknown path")
+            except ConnectionError:
+                print("error: connection error")
+                continue
+            except requests.exceptions.HTTPError as e:
+                print("http error:", e)
+
+
+
