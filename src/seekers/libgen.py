@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup
 from furl import furl
 import requests
 import re
+import isbnlib
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
 
@@ -121,7 +122,7 @@ def build_queries(item):
         {
             's': ne.title,
             'journalid': ne.journal,
-            'v': non_empty(e.volume, e.year),  # e.volume should be a string?
+            'v': non_empty(e.volume, e.year),  # TODO: e.volume should be a string?
             #'i': add ne.issue?
             'p': non_empty(e.pages),
             'redirect': 0  # Don't redirect to Sci-Hub on no results
@@ -161,8 +162,7 @@ def tables_fetcher(f):
 
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        # recursive=False?
-        yield soup.find('table', {'class': 'c', 'rules':'rows'})
+        yield soup.find('table', {'class': 'c', 'rules':'rows'}, recursive=False)
 
         p += 1
         last_request = r.text
@@ -190,11 +190,10 @@ def process_libgen(table):
         # series, edition and isbsns are all in the same <a>-tag: fortunately,
         # the title is always in normal text, while the latter are both in their own
         # <font>-tags.
-        #
 
-        authors, stei, publisher, year, pages, language,
+        authors, stei, publisher, year, pages, language, \
             size, extension = columns[1:9]
-        mirrors = columns[10:len(mirrors)-1]
+        mirrors = columns[10:-1]
 
         # If first <a>-tag has title attribute, the item does not have a series.
         has_series = False if stei.a.has_attr('title') else True
@@ -211,24 +210,45 @@ def process_libgen(table):
                 # No edtion of isbn numbers
                 return tei.text
 
-        def extract_edition(stei):
+        def extract_edition():
+            # Always surrounded by brackets, so look for those.
             for font in tei.find_all('font', recursive=False):
-                if '[' in font.text or ']' in font.text:
-                    for c in '[]':
-                        font.text.replace(c, '')
-
-                    return font.text
+                if font.text.startswith('[') and font.text.endswith(']'):
+                    return font.text[1:-1]
 
         nonexacts = bw.nonexacts_t({
-            'authors': authors.text,
             'series': stei.a.text if has_series else '',
             'title': extract_title(),
-            'edition': extract_title() or ''
-        })
+            'publisher': publisher.text,
+            'edition': extract_edition() or ''
+        }, authors.text.split(', '))
+
+        def try_toint(i):
+            try:
+                return int(i)
+            except ValueError:
+                return bw.empty
+
+        exacts = bw.exacts_t({
+            'year': try_toint(year.text),
+            'pages': try_toint(pages.text),
+        }, extension.text)
+
+        def extract_isbns():
+            valid_isbn = lambda isbn: isbnlib.is_isbn10(isbn) or isbnlib.is_isbn13(isbn)
+
+            # Always comma-seperated, so split those and check all elements
+            for font in tei.find_all('font', recursive=False):
+                return [isbn for font.text.split(', ') if valid_isbn(isbn)]
+
+        misc = bw.misc_t([mirror.a['href'] for mirror in mirrors], extract_isbns() or [])
+        return (nonexacts, exacts, misc)
 
     # The first row is the column headers, so we skip it.
     for row in table.find_all('tr')[1:]:
         items.append(make_item(row))
+
+    return items
 
 if __name__ == "__main__":
     nonexacts = bw.nonexacts_t({
@@ -241,6 +261,7 @@ if __name__ == "__main__":
 
     item = bw.item((nonexacts, bw.exacts_t({},''), bw.misc_t([],[])))
     queries = build_queries(item)
+    books = []
 
     for query in queries:
         for domain in DOMAINS:
@@ -253,7 +274,7 @@ if __name__ == "__main__":
             try:
                 for table in tables_fetcher(f):
                     if path == '/search.php':
-                        items = process_libgen(table)
+                        books.append(process_libgen(table))
                     else:
                         print("unknown path")
             except ConnectionError:
@@ -262,5 +283,6 @@ if __name__ == "__main__":
             except requests.exceptions.HTTPError as e:
                 print("http error:", e)
 
-
-
+    print('I found', len(books), 'books')
+    for book in books:
+        print(book)
