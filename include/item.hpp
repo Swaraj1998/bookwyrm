@@ -51,19 +51,21 @@ struct exacts_t {
         volume(get_value(dict, "volume")),
         number(get_value(dict, "number")),
         pages(get_value(dict, "pages")),
+        size(get_value(dict, "size")),
         extension(extension) {}
 
     const year_mod ymod;
     const int year,
               volume,  /* no associated flag */
               number,  /* no associated flag */
-              pages;   /* no associated flag */
+              pages,   /* no associated flag */
+              size;    /* in bytes; no associated flag */
 
     const string extension;
 
     /* Convenience container */
     const std::array<int, 5> store = {{
-        year, volume, number, pages
+        year, volume, number, pages, year
     }};
 
 private:
@@ -77,7 +79,8 @@ private:
         : ymod(std::get<0>(pair)), year(std::get<1>(pair)),
         volume(parse_number(cli, "volume")),
         number(parse_number(cli, "number")),
-        pages(parse_number(cli, "pages")),
+        pages(empty),
+        size(empty),
         extension(cli.get("extension")) {}
 };
 
