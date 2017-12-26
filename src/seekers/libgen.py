@@ -193,7 +193,7 @@ def process_libgen(table):
 
         authors, stei, publisher, year, pages, language, \
             size, extension = columns[1:9]
-        mirrors = columns[10:-1]
+        mirrors = columns[9:-1]  # Last column is a link to edit the entry.
 
         # If first <a>-tag has title attribute, the item does not have a series.
         has_series = False if stei.a.has_attr('title') else True
@@ -239,7 +239,9 @@ def process_libgen(table):
 
             # Always comma-seperated, so split those and check all elements
             for font in tei.find_all('font', recursive=False):
-                return [isbn for font.text.split(', ') if valid_isbn(isbn)]
+                if font.text.startswith('[') and font.text.endswith(']'):
+                    continue
+                return [isbn for isbn in font.text.split(', ') if valid_isbn(isbn)]
 
         misc = bw.misc_t([mirror.a['href'] for mirror in mirrors], extract_isbns() or [])
         return (nonexacts, exacts, misc)
@@ -262,11 +264,13 @@ if __name__ == "__main__":
     item = bw.item((nonexacts, bw.exacts_t({},''), bw.misc_t([],[])))
     queries = build_queries(item)
     books = []
+    domain = DOMAINS[0]
 
     for query in queries:
         for domain in DOMAINS:
             path, params = query
             f = furl('http://' + domain + path).set(query_params=params)
+            print(f.url)
 
             if path != '/search.php':
                 continue
@@ -282,6 +286,10 @@ if __name__ == "__main__":
                 continue
             except requests.exceptions.HTTPError as e:
                 print("http error:", e)
+                continue
+
+            # That domain worked; do the next query.
+            break
 
     print('I found', len(books), 'books')
     for book in books:

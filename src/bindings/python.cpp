@@ -93,7 +93,7 @@ PYBIND11_MODULE(pybookwyrm, m)
         .def(py::init<const vector<string>&, const vector<string>&>())
         .def_readonly("isbns", &bw::misc_t::isbns)
         .def_readonly("uris", &bw::misc_t::uris)
-        .def("__repr__", [const bw::misc_t &c] {
+        .def("__repr__", [](const bw::misc_t &c) {
             return fmt::format(
                 "<pybookwyrn.misc_t with fields:\n"
                 "\tisbns:     '{}'\n"
@@ -101,7 +101,7 @@ PYBIND11_MODULE(pybookwyrm, m)
                 utils::vector_to_string(c.isbns),
                 utils::vector_to_string(c.uris)
             );
-        })
+        });
 
     py::class_<bw::item>(m, "item")
         .def(py::init<const std::tuple<bw::nonexacts_t, bw::exacts_t, bw::misc_t>&>())
