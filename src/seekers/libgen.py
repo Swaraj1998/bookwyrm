@@ -148,14 +148,23 @@ def tables_fetcher(f):
     Yields a soup of the result table.
     """
 
-    # While /search.php has a horizontal scrollbar that displays the current viewed page,
-    # it is made with JavaScript, so we cannot use that. The second best way is probably
-    # do check whether the current page fetch yields the same soup. If that's the case,
-    # we've gone through all pages.
+    # Both /search.php and /foreignfiction/index.php uses some JavaScript under the name
+    # Paginator 3000 to generate the scrollbars that displays the pages available. The
+    # current page can easily be extracted to create a loop invariant, were we to actually
+    # execute JS.
+    #     With the most logical way to check if we're on the last page out of the window,
+    # the second best way seems to store the last request and diff with the next. If the
+    # page-parameter is out-of-bounds, the last page is instead fetched. This way, when
+    # last_request == current_requests, we've gone through all pages.
+    last_request = None
 
     p = 1
     query_params = f.args.copy()
-    last_request = None
+
+    extract_table = {
+        '/search.php': lambda soup: soup.find('table', {'class':'c', 'rules':'rows'}, recursive=False),
+        '/foreignfiction/index.php': lambda soup: soup.find_all('table', {'rules':'rows'})[-1],
+    }
 
     while True:
         f.set({'page':p}).add(query_params)
@@ -172,10 +181,11 @@ def tables_fetcher(f):
 
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        yield soup.find('table', {'class': 'c', 'rules':'rows'}, recursive=False)
+        yield extract_table.get(str(f.path))(soup)
 
         p += 1
         last_request = r.text
+
 
 def translate_size(string):
     """
