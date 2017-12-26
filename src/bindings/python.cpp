@@ -48,7 +48,6 @@ PYBIND11_MODULE(pybookwyrm, m)
     py::class_<bw::exacts_t>(m, "exacts_t")
         .def(py::init<const std::map<string, int>&, const string&>())
         .def_readonly("year",      &bw::exacts_t::year)
-        .def_readonly("edition",   &bw::exacts_t::edition)
         .def_readonly("extension", &bw::exacts_t::extension)
         .def_readonly("volume",    &bw::exacts_t::volume)
         .def_readonly("number",    &bw::exacts_t::number)
@@ -58,13 +57,12 @@ PYBIND11_MODULE(pybookwyrm, m)
             return fmt::format(
                 "<pybookwyrm.exacts_t with fields:\n"
                 "\tyear:      {}\n"
-                "\tedition:   {}\n"
                 "\tfile type: {}\n"
                 "\tvolume:    {}\n"
                 "\tnumber:    {}\n"
                 "\tpages:     {}\n",
                 /* "\tlanguage:  {}\n>", */
-                c.year, c.edition, c.extension, c.volume,
+                c.year, c.extension, c.volume,
                 c.number, c.pages //, c.lang
             );
         });
@@ -76,15 +74,17 @@ PYBIND11_MODULE(pybookwyrm, m)
         .def_readonly("series",    &bw::nonexacts_t::series)
         .def_readonly("publisher", &bw::nonexacts_t::publisher)
         .def_readonly("journal",   &bw::nonexacts_t::journal)
+        .def_readonly("edition",   &bw::nonexacts_t::edition)
         .def("__repr__", [](const bw::nonexacts_t &c) {
             return fmt::format(
                 "<pybookwyrm.nonexacts_t with fields:\n"
                 "\ttitle:     '{}'\n"
+                "\tedition:   '{}'\n"
                 "\tserie:     '{}'\n"
                 "\tpublisher: '{}'\n"
                 "\tjournal:   '{}'\n"
                 "\tauthors:   '{}'\n>",
-                c.title, c.series, c.publisher, c.journal,
+                c.title, c.series, c.edition, c.publisher, c.journal,
                 utils::vector_to_string(c.authors)
             );
         });
