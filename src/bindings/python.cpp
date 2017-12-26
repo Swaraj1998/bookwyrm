@@ -60,10 +60,11 @@ PYBIND11_MODULE(pybookwyrm, m)
                 "\tfile type: {}\n"
                 "\tvolume:    {}\n"
                 "\tnumber:    {}\n"
-                "\tpages:     {}\n",
+                "\tpages:     {}\n"
+                "\tsize:      {}B\n",
                 /* "\tlanguage:  {}\n>", */
                 c.year, c.extension, c.volume,
-                c.number, c.pages //, c.lang
+                c.number, c.pages, c.size //, c.lang
             );
         });
 
@@ -79,8 +80,8 @@ PYBIND11_MODULE(pybookwyrm, m)
             return fmt::format(
                 "<pybookwyrm.nonexacts_t with fields:\n"
                 "\ttitle:     '{}'\n"
-                "\tedition:   '{}'\n"
                 "\tserie:     '{}'\n"
+                "\tedition:   '{}'\n"
                 "\tpublisher: '{}'\n"
                 "\tjournal:   '{}'\n"
                 "\tauthors:   '{}'\n>",

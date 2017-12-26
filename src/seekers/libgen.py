@@ -24,11 +24,21 @@ Scrapes Library Genesis <https://en.wikipedia.org/wiki/Library_Genesis> for item
 import pybookwyrm as bw
 from bs4 import BeautifulSoup
 from furl import furl
+from collections import deque
 import requests
 import re
 import isbnlib
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
+
+def rows_from_url(url):
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    table = soup.find('table', {'class': 'c', 'rules':'rows'}, recursive=False)
+
+    for row in table.find_all('tr')[1:]:
+        yield row
+
 
 def build_queries(item):
     """
@@ -167,6 +177,26 @@ def tables_fetcher(f):
         p += 1
         last_request = r.text
 
+def translate_size(string):
+    """
+    Translate a size on the string form '1337 kb' and similar to a number of bytes.
+    """
+    try:
+        count, unit = string.split(' ')
+        count = int(count)
+    except (ValueError, TypeError):
+        return
+
+    si_prefix = {
+        'k': 1e3,
+        'M': 1e6,
+        'G': 1e9
+    }
+
+    # While LibGen lists sizes in '[kM]b', it's actually in bytes
+    return int(count * si_prefix.get(unit[0]))
+
+
 def process_libgen(table):
     """
     Processes a table soup and returns the items found within.
@@ -204,8 +234,9 @@ def process_libgen(table):
 
         def extract_title():
             try:
-                # The title if the text before the subsequent font tags, if any
-                return tei.font.previous_sibling
+                # The title is the first sibling of the first font tag, if any
+                dd = deque(tei.font.previous_siblings, maxlen=1)
+                return dd.pop()
             except AttributeError:
                 # No edtion of isbn numbers
                 return tei.text
@@ -220,7 +251,8 @@ def process_libgen(table):
             'series': stei.a.text if has_series else '',
             'title': extract_title(),
             'publisher': publisher.text,
-            'edition': extract_edition() or ''
+            'edition': extract_edition() or '',
+            'language': language.text
         }, authors.text.split(', '))
 
         def try_toint(i):
@@ -232,6 +264,7 @@ def process_libgen(table):
         exacts = bw.exacts_t({
             'year': try_toint(year.text),
             'pages': try_toint(pages.text),
+            'size': translate_size(size.text) or bw.empty
         }, extension.text)
 
         def extract_isbns():
@@ -278,7 +311,7 @@ if __name__ == "__main__":
             try:
                 for table in tables_fetcher(f):
                     if path == '/search.php':
-                        books.append(process_libgen(table))
+                        books += process_libgen(table)
                     else:
                         print("unknown path")
             except ConnectionError:
