@@ -304,6 +304,10 @@ def process_ffiction(table):
     """
     Processes a table soup from LibGen and returns the items found within.
     """
+    # NOTE: this process only works on libgen.io queries. gen.lib.rus.ec does not
+    # yield the same HTML.
+    # TODO: resolve this!
+
     items = []
 
     if table == None:
@@ -330,13 +334,54 @@ def process_ffiction(table):
         exacts = bw.exacts_t({}, extract_extension(mirrors.text))
 
         def extract_mirrors():
-            # Two mirrors are offered, where one link is relative and the other absolute.
-            relative, absolute = mirrors.div.find_all('a')
-            relative = "http://" + f.host + relative['href']
+            # Two mirrors are offered: one libgen.io and one libgen.pw.
+            # We must dig a bit to get an URL direct to the item.
+            # The path/query to both mirrors are md5 hashes, these mirrors takes us
+            # to intermediate download pages, where the final URL is given. Can these
+            # URLs be found within the md5 hashes? (fetching these pages is really slow)
+            io, pw = mirrors.div.find_all('a')
+            io = "http://" + f.host + io['href']
 
-            # Absolute mirror must be fetched and parsed first.
+            print("extracting mirrors")
 
-            return [relative, absolute['href']]
+            urls = []
+
+            try:  # libgen.io
+                # The MD5-parameter is the same in the final URL, but an additional
+                # key-parameter is needed (16 chars, alphanumeric, uppercase). Is this
+                # key generated on the fly or can we solve for it somehow?
+                r = requests.get(io)
+                soup = BeautifulSoup(r.text, 'html.parser')
+                url = soup.table.find_all('td')[-1].a['href']
+                urls.append(url)
+            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, AttributeError):
+                pass
+
+            try:  # libgen.pw
+                # This mirror contains an MD5-hash of the book. The intermediate download
+                # page contains a link with another hash which is always the same. Is it a
+                # hash of the book itself, or perhaps of the MD5?
+                r = requests.get(pw['href'])
+                soup = BeautifulSoup(r.text, 'html.parser')
+
+                # Additionally, we can also get the file size from here.
+                # But a side-effect would be real ugly. Is there a decent
+                # way to extract this outside of "extract_mirrors"?
+                #    Alternatively, the file size is also available in the main
+                # view on the gen.lib.rus.ec domain.
+                #params = soup.find('table', {'class':'book-item__params'})
+                #entry = params.find_all('tr')[1].find_all('td')[-1]
+                #size = translate_size(entry.text)
+
+                dlpath = soup.find('div', {'class':'book-info__download'}).a['href']
+                r = requests.get('https://libgen.pw' + dlpath)
+                soup = BeautifulSoup(r.text, 'html.parser')
+                url = 'https://libgen.pw' + soup.find('div', {'class':'book-info__get'}).a['href']
+                urls.append(url)
+            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, AttributeError):
+                pass
+
+            return urls
 
         misc = bw.misc_t(extract_mirrors(), [])
         return (nonexacts, exacts, misc)
@@ -372,13 +417,15 @@ if __name__ == "__main__":
 
             try:
                 for table in tables_fetcher(f):
+                    print("next table")
+
                     if path == '/search.php':
                         books += process_libgen(table)
                     elif path == '/foreignfiction/index.php':
                         books += process_ffiction(table)
                     else:
                         print("unknown path")
-            except ConnectionError:
+            except requests.exceptions.ConnectionError:
                 print("error: connection error")
                 continue
             except requests.exceptions.HTTPError as e:
