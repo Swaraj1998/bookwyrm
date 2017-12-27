@@ -161,11 +161,12 @@ def tables_fetcher(f):
     p = 1
     query_params = f.args.copy()
 
-    extract_operation = {
+    extract_table = {
         '/search.php': lambda soup: soup.find('table', {'class':'c', 'rules':'rows'}, recursive=False),
         '/foreignfiction/index.php': lambda soup: soup.find_all('table', {'rules':'rows'})[-1],
     }
 
+    # This doesn't look as good any more. Can we make this better?
     while True:
         f.set({'page':p}).add(query_params)
 
@@ -175,13 +176,17 @@ def tables_fetcher(f):
             # Or log after taking exception?
             r.raise_for_status()
 
-        if r.text == last_request:
+        soup = BeautifulSoup(r.text, 'html.parser')
+        table = extract_table[str(f.path)](soup)
+
+        if f.path == '/search.php' and r.text == last_request:
             # We've gone through all pages.
             return
+        elif f.path == '/foreignfiction/index.php' and table.text == '':
+            # Same thing here
+            return
 
-        soup = BeautifulSoup(r.text, 'html.parser')
-
-        yield extract_operation[str(f.path)](soup)
+        yield table
 
         p += 1
         last_request = r.text
@@ -310,24 +315,28 @@ def process_ffiction(table):
 
         authors, series, title, language, mirrors = columns
 
+        # TODO: fix this code for multiple authors.
+        # ',' is used to seperate first and last name, but what
+        # is used for author seperation?
+
         nonexacts = bw.nonexacts_t({
             'series': series.text,
             'title': title.text,
             'language': language.text,
-        }, authors.text)
+        }, [authors.text])
 
         extract_extension = lambda s: s.split('(', 1)[0]
 
-        exacts = bw.nonexacts_t({}, extract_extension(mirrors.text))
+        exacts = bw.exacts_t({}, extract_extension(mirrors.text))
 
         def extract_mirrors():
             # Two mirrors are offered, where one link is relative and the other absolute.
             relative, absolute = mirrors.div.find_all('a')
-            relative = f.host + relative['href']
+            relative = "http://" + f.host + relative['href']
 
             # Absolute mirror must be fetched and parsed first.
 
-            return [relative['href'], absolute['href']]
+            return [relative, absolute['href']]
 
         misc = bw.misc_t(extract_mirrors(), [])
         return (nonexacts, exacts, misc)
@@ -358,8 +367,8 @@ if __name__ == "__main__":
             f = furl('http://' + domain + path).set(query_params=params)
             print(f.url)
 
-            if path != '/search.php':
-                continue
+            if path != '/foreignfiction/index.php' and path != '/search.php':
+                break
 
             try:
                 for table in tables_fetcher(f):
