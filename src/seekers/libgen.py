@@ -161,7 +161,7 @@ def tables_fetcher(f):
     p = 1
     query_params = f.args.copy()
 
-    extract_table = {
+    extract_operation = {
         '/search.php': lambda soup: soup.find('table', {'class':'c', 'rules':'rows'}, recursive=False),
         '/foreignfiction/index.php': lambda soup: soup.find_all('table', {'rules':'rows'})[-1],
     }
@@ -181,7 +181,7 @@ def tables_fetcher(f):
 
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        yield extract_table.get(str(f.path))(soup)
+        yield extract_operation[str(f.path)](soup)
 
         p += 1
         last_request = r.text
@@ -209,7 +209,7 @@ def translate_size(string):
 
 def process_libgen(table):
     """
-    Processes a table soup and returns the items found within.
+    Processes a table soup from LibGen and returns the items found within.
     """
     items = []
 
@@ -295,6 +295,49 @@ def process_libgen(table):
 
     return items
 
+def process_ffiction(table):
+    """
+    Processes a table soup from LibGen and returns the items found within.
+    """
+    items = []
+
+    if table == None:
+        print("table is None")
+        return
+
+    def make_item(row):
+        columns = row.find_all('td')
+
+        authors, series, title, language, mirrors = columns
+
+        nonexacts = bw.nonexacts_t({
+            'series': series.text,
+            'title': title.text,
+            'language': language.text,
+        }, authors.text)
+
+        extract_extension = lambda s: s.split('(', 1)[0]
+
+        exacts = bw.nonexacts_t({}, extract_extension(mirrors.text))
+
+        def extract_mirrors():
+            # Two mirrors are offered, where one link is relative and the other absolute.
+            relative, absolute = mirrors.div.find_all('a')
+            relative = f.host + relative['href']
+
+            # Absolute mirror must be fetched and parsed first.
+
+            return [relative['href'], absolute['href']]
+
+        misc = bw.misc_t(extract_mirrors(), [])
+        return (nonexacts, exacts, misc)
+
+
+    for row in table.find_all('tr'):
+        items.append(make_item(row))
+
+    return items
+
 if __name__ == "__main__":
     nonexacts = bw.nonexacts_t({
         'title': 'Victory of Eagles',
@@ -322,6 +365,8 @@ if __name__ == "__main__":
                 for table in tables_fetcher(f):
                     if path == '/search.php':
                         books += process_libgen(table)
+                    elif path == '/foreignfiction/index.php':
+                        books += process_ffiction(table)
                     else:
                         print("unknown path")
             except ConnectionError:
