@@ -31,14 +31,44 @@ import isbnlib
 
 DOMAINS = ('libgen.io', 'gen.lib.rus.ec')
 
-def rows_from_url(url):
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    table = soup.find('table', {'class': 'c', 'rules':'rows'}, recursive=False)
+# TODO list:
+#   - fix mirrors for LibGen
+#   - parse and process Scimag
+#   - parse and process Russian fiction
+#   - parse and process comics
+#   - parse and process standards
+#   - parse and process magazines
+#   - Fix all TODO:s
 
-    for row in table.find_all('tr')[1:]:
-        yield row
+#
+# Utility functions
+# General enough to be on their own.
+#
 
+def translate_size(string):
+    """
+    Translate a size on the string form '1337 kb' and similar to a number of bytes.
+    """
+    try:
+        count, unit = string.split(' ')
+        count = int(count)
+    except (ValueError, TypeError):
+        return
+
+
+    si_prefix = {
+        'k': 1e3,
+        'M': 1e6,
+        'G': 1e9
+    }
+
+    # While LibGen lists sizes in '[kM]b', it's actually in bytes
+    return int(count * si_prefix.get(unit[0]))
+
+
+#
+# Source-specific functions.
+#
 
 def build_queries(item):
     """
@@ -144,7 +174,8 @@ def build_queries(item):
 
 def tables_fetcher(f):
     """
-    A generator that given a start URL fetches each page of results.
+    A generator that given a start URL, fetches each page of result,
+    by supplying a page=n parameter.
     Yields a soup of the result table.
     """
 
@@ -153,9 +184,10 @@ def tables_fetcher(f):
     # current page can easily be extracted to create a loop invariant, were we to actually
     # execute JS.
     #     With the most logical way to check if we're on the last page out of the window,
-    # the second best way seems to store the last request and diff with the next. If the
-    # page-parameter is out-of-bounds, the last page is instead fetched. This way, when
-    # last_request == current_requests, we've gone through all pages.
+    # we'll have to hack some invariants together:
+    #     - /search.php: check if the last request matches the previous one;
+    #     - /foreignfiction/index.php: check if the table is empty;
+    # When the respective invariant is True, we've gone through all pages.
     last_request = None
 
     p = 1
@@ -166,7 +198,7 @@ def tables_fetcher(f):
         '/foreignfiction/index.php': lambda soup: soup.find_all('table', {'rules':'rows'})[-1],
     }
 
-    # This doesn't look as good any more. Can we make this better?
+    # The ad-hoc'ed invariants does NOT look good. How can we make this better?
     while True:
         f.set({'page':p}).add(query_params)
 
@@ -192,35 +224,15 @@ def tables_fetcher(f):
         last_request = r.text
 
 
-def translate_size(string):
-    """
-    Translate a size on the string form '1337 kb' and similar to a number of bytes.
-    """
-    try:
-        count, unit = string.split(' ')
-        count = int(count)
-    except (ValueError, TypeError):
-        return
-
-    si_prefix = {
-        'k': 1e3,
-        'M': 1e6,
-        'G': 1e9
-    }
-
-    # While LibGen lists sizes in '[kM]b', it's actually in bytes
-    return int(count * si_prefix.get(unit[0]))
-
-
 def process_libgen(table):
     """
     Processes a table soup from LibGen and returns the items found within.
     """
+    # TODO: is the same HTML given when using gen.lib.rus.ec host?
     items = []
 
     if table == None:
-        print("table is None")
-        return
+        raise "table is non"
 
     def make_item(row):
         columns = row.find_all('td')
@@ -231,8 +243,8 @@ def process_libgen(table):
         # (in green cursive), title (blue), edition (cursive, green, in brackets),
         # and a number of ISBN numbers (green, cursive).
         #
-        # Also, within this STEI (series, title, edition, isbsns) field, the title,
-        # series, edition and isbsns are all in the same <a>-tag: fortunately,
+        # Also, within this STEI- (series, title, edition, isbsns) field, the title,
+        # series, edition and isbsns are all in the same <a>-tag. Fortunately,
         # the title is always in normal text, while the latter are both in their own
         # <font>-tags.
 
@@ -253,7 +265,7 @@ def process_libgen(table):
                 dd = deque(tei.font.previous_siblings, maxlen=1)
                 return dd.pop()
             except AttributeError:
-                # No edtion of isbn numbers
+                # No edtion of isbn numbers; so only the title is given.
                 return tei.text
 
         def extract_edition():
@@ -270,16 +282,16 @@ def process_libgen(table):
             'language': language.text
         }, authors.text.split(', '))
 
-        def try_toint(i):
+        def try_toint(s):
             try:
-                return int(i)
+                return int(s.text)
             except ValueError:
                 return bw.empty
 
         exacts = bw.exacts_t({
-            'year': try_toint(year.text),
-            'pages': try_toint(pages.text),
-            'size': translate_size(size.text) or bw.empty
+            'year': try_toint(year),
+            'pages': try_toint(pages),
+            'size': translate_size(size) or bw.empty
         }, extension.text)
 
         def extract_isbns():
@@ -288,9 +300,11 @@ def process_libgen(table):
             # Always comma-seperated, so split those and check all elements
             for font in tei.find_all('font', recursive=False):
                 if font.text.startswith('[') and font.text.endswith(']'):
+                    # We stumbled upon the edition, again.
                     continue
                 return [isbn for isbn in font.text.split(', ') if valid_isbn(isbn)]
 
+        # TODO: these mirrors must be processed!
         misc = bw.misc_t([mirror.a['href'] for mirror in mirrors], extract_isbns() or [])
         return (nonexacts, exacts, misc)
 
@@ -299,6 +313,7 @@ def process_libgen(table):
         items.append(make_item(row))
 
     return items
+
 
 def process_ffiction(table):
     """
@@ -311,8 +326,7 @@ def process_ffiction(table):
     items = []
 
     if table == None:
-        print("table is None")
-        return
+        raise "table is none"
 
     def make_item(row):
         columns = row.find_all('td')
@@ -335,33 +349,36 @@ def process_ffiction(table):
 
         def extract_mirrors():
             # Two mirrors are offered: one libgen.io and one libgen.pw.
-            # We must dig a bit to get an URL direct to the item.
-            # The path/query to both mirrors are md5 hashes, these mirrors takes us
-            # to intermediate download pages, where the final URL is given. Can these
-            # URLs be found within the md5 hashes? (fetching these pages is really slow)
+            # Both mirrors lead to intermediate download page(s).
+            # The download URl must be extracted from these pages.
+            # Both download links contain the md5-hash of the item (presumebly).
+            # Can the final URL be deduced from this hash? (fetching these pages
+            # really slows things down).
+            # NOTE: Handle this in back-end? No, an intermediate page may fail.
+
+            # NOTE: this happens to be None at times. Why?
             io, pw = mirrors.div.find_all('a')
             io = "http://" + f.host + io['href']
-
-            print("extracting mirrors")
+            pw = pw['href']
 
             urls = []
 
             try:  # libgen.io
-                # The MD5-parameter is the same in the final URL, but an additional
-                # key-parameter is needed (16 chars, alphanumeric, uppercase). Is this
-                # key generated on the fly or can we solve for it somehow?
+                # Final URL contains same md5-hash, but an additional key parameter is
+                # required (16 chars, alphanumeric, uppercase). Seems to be generated on
+                # the fly. Or can it be solved for somehow?
                 r = requests.get(io)
                 soup = BeautifulSoup(r.text, 'html.parser')
-                url = soup.table.find_all('td')[-1].a['href']
-                urls.append(url)
-            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, AttributeError):
+                final = soup.table.find_all('td')[-1].a['href']
+                urls.append(final)
+            except:
                 pass
 
             try:  # libgen.pw
-                # This mirror contains an MD5-hash of the book. The intermediate download
-                # page contains a link with another hash which is always the same. Is it a
-                # hash of the book itself, or perhaps of the MD5?
-                r = requests.get(pw['href'])
+                # Final URL contains another hash, which is always the same: the two hashes are
+                # related. Now, is this a hash of the book itself, or the md5? (hash-finder hints
+                # at CRC-96).
+                r = requests.get(pw)
                 soup = BeautifulSoup(r.text, 'html.parser')
 
                 # Additionally, we can also get the file size from here.
@@ -373,12 +390,12 @@ def process_ffiction(table):
                 #entry = params.find_all('tr')[1].find_all('td')[-1]
                 #size = translate_size(entry.text)
 
-                dlpath = soup.find('div', {'class':'book-info__download'}).a['href']
-                r = requests.get('https://libgen.pw' + dlpath)
-                soup = BeautifulSoup(r.text, 'html.parser')
-                url = 'https://libgen.pw' + soup.find('div', {'class':'book-info__get'}).a['href']
-                urls.append(url)
-            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, AttributeError):
+                # We can skip a third request by getting the libgen.pw's hash and
+                # craft the final URL.
+                hsh = soup.find('div', {'class':'book-info__download'}).a['href'].split('/')[-1]
+                final = 'https://fiction.libgen.pw/download/book/' + hsh
+                urls.append(final)
+            except:
                 pass
 
             return urls
@@ -388,9 +405,13 @@ def process_ffiction(table):
 
 
     for row in table.find_all('tr'):
-        items.append(make_item(row))
+        try:
+            items.append(make_item(row))
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, AttributeError):
+            continue
 
     return items
+
 
 if __name__ == "__main__":
     nonexacts = bw.nonexacts_t({
