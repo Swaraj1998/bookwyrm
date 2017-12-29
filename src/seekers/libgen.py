@@ -304,6 +304,11 @@ def process_libgen(table):
                     continue
                 return [isbn for isbn in font.text.split(', ') if valid_isbn(isbn)]
 
+        def extract_mirrors():
+            libgenio, libgenpw, bookfi, b-ok = mirrors
+            # first two are A-okay.
+            # Both Bookfi  and b-ok requires the referer to be the previous page.
+
         # TODO: these mirrors must be processed!
         misc = bw.misc_t([mirror.a['href'] for mirror in mirrors], extract_isbns() or [])
         return (nonexacts, exacts, misc)

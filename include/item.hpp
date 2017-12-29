@@ -112,6 +112,14 @@ private:
     static const string get_value(const std::map<string, string> &dict, const string &&key);
 };
 
+struct request {
+    /* Holds necessary data to download an item. */
+
+    /* some type enum? ´headers´ will only be used when the mirror is over HTTP. */
+    const string uri;
+    const std::map<string, string> headers;
+}
+
 struct misc_t {
     /* Holds everything else. */
     explicit misc_t(const vector<string> &uris, const vector<string> &isbns)
